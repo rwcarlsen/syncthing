@@ -465,13 +465,13 @@ ResponseMessage Structure:
 \                    Data (variable length)                     \
 /                                                               /
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-|                             Error                             |
+|                             Code                              |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 
 
 struct ResponseMessage {
 	opaque Data<>;
-	unsigned int Error;
+	unsigned int Code;
 }
 
 */
@@ -502,7 +502,7 @@ func (o ResponseMessage) AppendXDR(bs []byte) ([]byte, error) {
 
 func (o ResponseMessage) encodeXDR(xw *xdr.Writer) (int, error) {
 	xw.WriteBytes(o.Data)
-	xw.WriteUint32(o.Error)
+	xw.WriteUint32(o.Code)
 	return xw.Tot(), xw.Error()
 }
 
@@ -519,7 +519,7 @@ func (o *ResponseMessage) UnmarshalXDR(bs []byte) error {
 
 func (o *ResponseMessage) decodeXDR(xr *xdr.Reader) error {
 	o.Data = xr.ReadBytes()
-	o.Error = xr.ReadUint32()
+	o.Code = xr.ReadUint32()
 	return xr.Error()
 }
 

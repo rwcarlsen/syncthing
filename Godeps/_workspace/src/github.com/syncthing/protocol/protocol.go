@@ -47,6 +47,14 @@ const (
 )
 
 const (
+	FlagIndexTemporary uint32 = 1 << iota
+)
+
+const (
+	FlagRequestTemporary uint32 = 1 << iota
+)
+
+const (
 	FlagShareTrusted  uint32 = 1 << 0
 	FlagShareReadOnly        = 1 << 1
 	FlagIntroducer           = 1 << 2
@@ -64,11 +72,11 @@ type pongMessage struct{ EmptyMessage }
 
 type Model interface {
 	// An index was received from the peer device
-	Index(deviceID DeviceID, folder string, files []FileInfo)
+	Index(deviceID DeviceID, folder string, files []FileInfo, flags uint32, options []Option)
 	// An index update was received from the peer device
-	IndexUpdate(deviceID DeviceID, folder string, files []FileInfo)
+	IndexUpdate(deviceID DeviceID, folder string, files []FileInfo, flags uint32, options []Option)
 	// A request was made by the peer device
-	Request(deviceID DeviceID, folder string, name string, offset int64, size int) ([]byte, error)
+	Request(deviceID DeviceID, folder string, name string, offset int64, size int, hash []byte, flags uint32, options []Option) ([]byte, error)
 	// A cluster configuration message was received
 	ClusterConfig(deviceID DeviceID, config ClusterConfigMessage)
 	// The peer device closed the connection
@@ -78,9 +86,9 @@ type Model interface {
 type Connection interface {
 	ID() DeviceID
 	Name() string
-	Index(folder string, files []FileInfo) error
-	IndexUpdate(folder string, files []FileInfo) error
-	Request(folder string, name string, offset int64, size int) ([]byte, error)
+	Index(folder string, files []FileInfo, flags uint32, options []Option) error
+	IndexUpdate(folder string, files []FileInfo, flags uint32, options []Option) error
+	Request(folder string, name string, offset int64, size int, hash []byte, flags uint32, options []Option) ([]byte, error)
 	ClusterConfig(config ClusterConfigMessage)
 	Statistics() Statistics
 }
@@ -171,7 +179,7 @@ func (c *rawConnection) Name() string {
 }
 
 // Index writes the list of file information to the connected peer device
-func (c *rawConnection) Index(folder string, idx []FileInfo) error {
+func (c *rawConnection) Index(folder string, idx []FileInfo, flags uint32, options []Option) error {
 	select {
 	case <-c.closed:
 		return ErrClosed
@@ -179,15 +187,17 @@ func (c *rawConnection) Index(folder string, idx []FileInfo) error {
 	}
 	c.idxMut.Lock()
 	c.send(-1, messageTypeIndex, IndexMessage{
-		Folder: folder,
-		Files:  idx,
+		Folder:  folder,
+		Files:   idx,
+		Flags:   flags,
+		Options: options,
 	})
 	c.idxMut.Unlock()
 	return nil
 }
 
 // IndexUpdate writes the list of file information to the connected peer device as an update
-func (c *rawConnection) IndexUpdate(folder string, idx []FileInfo) error {
+func (c *rawConnection) IndexUpdate(folder string, idx []FileInfo, flags uint32, options []Option) error {
 	select {
 	case <-c.closed:
 		return ErrClosed
@@ -195,15 +205,17 @@ func (c *rawConnection) IndexUpdate(folder string, idx []FileInfo) error {
 	}
 	c.idxMut.Lock()
 	c.send(-1, messageTypeIndexUpdate, IndexMessage{
-		Folder: folder,
-		Files:  idx,
+		Folder:  folder,
+		Files:   idx,
+		Flags:   flags,
+		Options: options,
 	})
 	c.idxMut.Unlock()
 	return nil
 }
 
 // Request returns the bytes for the specified block after fetching them from the connected peer.
-func (c *rawConnection) Request(folder string, name string, offset int64, size int) ([]byte, error) {
+func (c *rawConnection) Request(folder string, name string, offset int64, size int, hash []byte, flags uint32, options []Option) ([]byte, error) {
 	var id int
 	select {
 	case id = <-c.nextID:
@@ -220,10 +232,13 @@ func (c *rawConnection) Request(folder string, name string, offset int64, size i
 	c.awaitingMut.Unlock()
 
 	ok := c.send(id, messageTypeRequest, RequestMessage{
-		Folder: folder,
-		Name:   name,
-		Offset: uint64(offset),
-		Size:   uint32(size),
+		Folder:  folder,
+		Name:    name,
+		Offset:  uint64(offset),
+		Size:    uint32(size),
+		Hash:    hash,
+		Flags:   flags,
+		Options: options,
 	})
 	if !ok {
 		return nil, ErrClosed
@@ -282,11 +297,6 @@ func (c *rawConnection) readerLoop() (err error) {
 
 		switch msg := msg.(type) {
 		case IndexMessage:
-			if msg.Flags != 0 {
-				// We don't currently support or expect any flags.
-				return fmt.Errorf("protocol error: unknown flags 0x%x in Index(Update) message", msg.Flags)
-			}
-
 			switch hdr.msgType {
 			case messageTypeIndex:
 				if c.state < stateCCRcvd {
@@ -303,10 +313,6 @@ func (c *rawConnection) readerLoop() (err error) {
 			}
 
 		case RequestMessage:
-			if msg.Flags != 0 {
-				// We don't currently support or expect any flags.
-				return fmt.Errorf("protocol error: unknown flags 0x%x in Request message", msg.Flags)
-			}
 			if c.state < stateIdxRcvd {
 				return fmt.Errorf("protocol error: request message in state %d", c.state)
 			}
@@ -462,16 +468,16 @@ func (c *rawConnection) readMessage() (hdr header, msg encodable, err error) {
 
 func (c *rawConnection) handleIndex(im IndexMessage) {
 	if debug {
-		l.Debugf("Index(%v, %v, %d files)", c.id, im.Folder, len(im.Files))
+		l.Debugf("Index(%v, %v, %d file, flags %x, opts: %s)", c.id, im.Folder, len(im.Files), im.Flags, im.Options)
 	}
-	c.receiver.Index(c.id, im.Folder, filterIndexMessageFiles(im.Files))
+	c.receiver.Index(c.id, im.Folder, filterIndexMessageFiles(im.Files), im.Flags, im.Options)
 }
 
 func (c *rawConnection) handleIndexUpdate(im IndexMessage) {
 	if debug {
-		l.Debugf("queueing IndexUpdate(%v, %v, %d files)", c.id, im.Folder, len(im.Files))
+		l.Debugf("queueing IndexUpdate(%v, %v, %d files, flags %x, opts: %s)", c.id, im.Folder, len(im.Files), im.Flags, im.Options)
 	}
-	c.receiver.IndexUpdate(c.id, im.Folder, filterIndexMessageFiles(im.Files))
+	c.receiver.IndexUpdate(c.id, im.Folder, filterIndexMessageFiles(im.Files), im.Flags, im.Options)
 }
 
 func filterIndexMessageFiles(fs []FileInfo) []FileInfo {
@@ -501,10 +507,11 @@ func filterIndexMessageFiles(fs []FileInfo) []FileInfo {
 }
 
 func (c *rawConnection) handleRequest(msgID int, req RequestMessage) {
-	data, _ := c.receiver.Request(c.id, req.Folder, req.Name, int64(req.Offset), int(req.Size))
+	data, err := c.receiver.Request(c.id, req.Folder, req.Name, int64(req.Offset), int(req.Size), req.Hash, req.Flags, req.Options)
 
 	c.send(msgID, messageTypeResponse, ResponseMessage{
 		Data: data,
+		Code: errorToCode(err),
 	})
 }
 
@@ -512,7 +519,7 @@ func (c *rawConnection) handleResponse(msgID int, resp ResponseMessage) {
 	c.awaitingMut.Lock()
 	if rc := c.awaiting[msgID]; rc != nil {
 		c.awaiting[msgID] = nil
-		rc <- asyncResult{resp.Data, nil}
+		rc <- asyncResult{resp.Data, codeToError(resp.Code)}
 		close(rc)
 	}
 	c.awaitingMut.Unlock()
