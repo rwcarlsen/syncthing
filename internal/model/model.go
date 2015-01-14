@@ -473,7 +473,7 @@ func (m *Model) NeedFolderFiles(folder string, max int) ([]db.FileInfoTruncated,
 
 // Index is called when a new device is connected and we receive their full index.
 // Implements the protocol.Model interface.
-func (m *Model) Index(deviceID protocol.DeviceID, folder string, fs []protocol.FileInfo) {
+func (m *Model) Index(deviceID protocol.DeviceID, folder string, fs []protocol.FileInfo, flags uint32, options []protocol.Option) {
 	if debug {
 		l.Debugf("IDX(in): %s %q: %d files", deviceID, folder, len(fs))
 	}
@@ -520,7 +520,7 @@ func (m *Model) Index(deviceID protocol.DeviceID, folder string, fs []protocol.F
 
 // IndexUpdate is called for incremental updates to connected devices' indexes.
 // Implements the protocol.Model interface.
-func (m *Model) IndexUpdate(deviceID protocol.DeviceID, folder string, fs []protocol.FileInfo) {
+func (m *Model) IndexUpdate(deviceID protocol.DeviceID, folder string, fs []protocol.FileInfo, flags uint32, options []protocol.Option) {
 	if debug {
 		l.Debugf("%v IDXUP(in): %s / %q: %d files", m, deviceID, folder, len(fs))
 	}
@@ -715,7 +715,8 @@ func (m *Model) Close(device protocol.DeviceID, err error) {
 
 // Request returns the specified data segment by reading it from local disk.
 // Implements the protocol.Model interface.
-func (m *Model) Request(deviceID protocol.DeviceID, folder, name string, offset int64, size int) ([]byte, error) {
+
+func (m *Model) Request(deviceID protocol.DeviceID, folder, name string, offset int64, size int, hash []byte, flags uint32, options []protocol.Option) ([]byte, error) {
 	if !m.folderSharedWith(folder, deviceID) {
 		l.Warnf("Request from %s for file %s in unshared folder %q", deviceID, name, folder)
 		return nil, ErrNoSuchFile
@@ -1012,7 +1013,7 @@ func sendIndexTo(initial bool, minLocalVer uint64, conn protocol.Connection, fol
 
 		if len(batch) == indexBatchSize || currentBatchSize > indexTargetSize {
 			if initial {
-				if err = conn.Index(folder, batch); err != nil {
+				if err = conn.Index(folder, batch, 0, nil); err != nil {
 					return false
 				}
 				if debug {
@@ -1020,7 +1021,7 @@ func sendIndexTo(initial bool, minLocalVer uint64, conn protocol.Connection, fol
 				}
 				initial = false
 			} else {
-				if err = conn.IndexUpdate(folder, batch); err != nil {
+				if err = conn.IndexUpdate(folder, batch, 0, nil); err != nil {
 					return false
 				}
 				if debug {
@@ -1038,12 +1039,12 @@ func sendIndexTo(initial bool, minLocalVer uint64, conn protocol.Connection, fol
 	})
 
 	if initial && err == nil {
-		err = conn.Index(folder, batch)
+		err = conn.Index(folder, batch, 0, nil)
 		if debug && err == nil {
 			l.Debugf("sendIndexes for %s-%s/%q: %d files (small initial index)", deviceID, name, folder, len(batch))
 		}
 	} else if len(batch) > 0 && err == nil {
-		err = conn.IndexUpdate(folder, batch)
+		err = conn.IndexUpdate(folder, batch, 0, nil)
 		if debug && err == nil {
 			l.Debugf("sendIndexes for %s-%s/%q: %d files (last batch)", deviceID, name, folder, len(batch))
 		}
@@ -1066,7 +1067,7 @@ func (m *Model) updateLocal(folder string, f protocol.FileInfo) {
 	})
 }
 
-func (m *Model) requestGlobal(deviceID protocol.DeviceID, folder, name string, offset int64, size int, hash []byte) ([]byte, error) {
+func (m *Model) requestGlobal(deviceID protocol.DeviceID, folder, name string, offset int64, size int, hash []byte, flags uint32, options []protocol.Option) ([]byte, error) {
 	m.pmut.RLock()
 	nc, ok := m.protoConn[deviceID]
 	m.pmut.RUnlock()
@@ -1076,10 +1077,10 @@ func (m *Model) requestGlobal(deviceID protocol.DeviceID, folder, name string, o
 	}
 
 	if debug {
-		l.Debugf("%v REQ(out): %s: %q / %q o=%d s=%d h=%x", m, deviceID, folder, name, offset, size, hash)
+		l.Debugf("%v REQ(out): %s: %q / %q o=%d s=%d h=%x f=%x op=%s", m, deviceID, folder, name, offset, size, hash, flags, options)
 	}
 
-	return nc.Request(folder, name, offset, size)
+	return nc.Request(folder, name, offset, size, hash, flags, options)
 }
 
 func (m *Model) AddFolder(cfg config.FolderConfiguration) {
