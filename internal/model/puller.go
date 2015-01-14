@@ -584,6 +584,8 @@ func (p *Puller) handleFile(file protocol.FileInfo, copyChan chan<- copyBlocksSt
 	reused := 0
 	var blocks []protocol.BlockInfo
 
+	availableBlocks := make([]protocol.BlockInfo, 0, len(file.Blocks))
+
 	// Check for an old temporary file which might have some blocks we could
 	// reuse.
 	tempBlocks, err := scanner.HashFile(tempName, protocol.BlockSize)
@@ -602,6 +604,8 @@ func (p *Puller) handleFile(file protocol.FileInfo, copyChan chan<- copyBlocksSt
 			_, ok := existingBlocks[block.String()]
 			if !ok {
 				blocks = append(blocks, block)
+			} else {
+				availableBlocks = append(availableBlocks, block)
 			}
 		}
 
@@ -626,6 +630,7 @@ func (p *Puller) handleFile(file protocol.FileInfo, copyChan chan<- copyBlocksSt
 		copyTotal:  uint32(len(blocks)),
 		copyNeeded: uint32(len(blocks)),
 		reused:     uint32(reused),
+		available:  availableBlocks,
 	}
 
 	if debug {
@@ -779,7 +784,7 @@ func (p *Puller) copierRoutine(in <-chan copyBlocksState, pullChan chan<- pullBl
 				}
 				pullChan <- ps
 			} else {
-				state.copyDone()
+				state.copyDone(block)
 			}
 		}
 		fdCache.Evict(fdCache.Len())
@@ -841,7 +846,7 @@ func (p *Puller) pullerRoutine(in <-chan pullBlockState, out chan<- *sharedPulle
 			if err != nil {
 				state.fail("save", err)
 			} else {
-				state.pullDone()
+				state.pullDone(state.block)
 			}
 			break
 		}
