@@ -76,16 +76,19 @@ func TestHandleFile(t *testing.T) {
 	requiredFile := existingFile
 	requiredFile.Blocks = blocks[1:]
 
+	cfg := config.Wrap("/tmp/test", config.Configuration{})
+
 	db, _ := leveldb.Open(storage.NewMemStorage(), nil)
-	m := NewModel(config.Wrap("/tmp/test", config.Configuration{}), "device", "syncthing", "dev", db)
+	m := NewModel(cfg, "device", "syncthing", "dev", db)
 	m.AddFolder(config.FolderConfiguration{ID: "default", Path: "testdata"})
 	// Update index
 	m.updateLocal("default", existingFile)
 
 	p := Puller{
-		folder: "default",
-		dir:    "testdata",
-		model:  m,
+		folder:          "default",
+		dir:             "testdata",
+		model:           m,
+		progressEmitter: NewProgressEmitter(cfg),
 	}
 
 	copyChan := make(chan copyBlocksState, 1)
@@ -130,16 +133,19 @@ func TestHandleFileWithTemp(t *testing.T) {
 	requiredFile := existingFile
 	requiredFile.Blocks = blocks[1:]
 
+	cfg := config.Wrap("/tmp/test", config.Configuration{})
+
 	db, _ := leveldb.Open(storage.NewMemStorage(), nil)
-	m := NewModel(config.Wrap("/tmp/test", config.Configuration{}), "device", "syncthing", "dev", db)
+	m := NewModel(cfg, "device", "syncthing", "dev", db)
 	m.AddFolder(config.FolderConfiguration{ID: "default", Path: "testdata"})
 	// Update index
 	m.updateLocal("default", existingFile)
 
 	p := Puller{
-		folder: "default",
-		dir:    "testdata",
-		model:  m,
+		folder:          "default",
+		dir:             "testdata",
+		model:           m,
+		progressEmitter: NewProgressEmitter(cfg),
 	}
 
 	copyChan := make(chan copyBlocksState, 1)
@@ -191,10 +197,10 @@ func TestCopierFinder(t *testing.T) {
 	requiredFile.Name = "file2"
 
 	fcfg := config.FolderConfiguration{ID: "default", Path: "testdata"}
-	cfg := config.Configuration{Folders: []config.FolderConfiguration{fcfg}}
+	cfg := config.Wrap("/tmp/test", config.Configuration{Folders: []config.FolderConfiguration{fcfg}})
 
 	db, _ := leveldb.Open(storage.NewMemStorage(), nil)
-	m := NewModel(config.Wrap("/tmp/test", cfg), "device", "syncthing", "dev", db)
+	m := NewModel(cfg, "device", "syncthing", "dev", db)
 	m.AddFolder(fcfg)
 	// Update index
 	m.updateLocal("default", existingFile)
@@ -211,9 +217,10 @@ func TestCopierFinder(t *testing.T) {
 	}
 
 	p := Puller{
-		folder: "default",
-		dir:    "testdata",
-		model:  m,
+		folder:          "default",
+		dir:             "testdata",
+		model:           m,
+		progressEmitter: NewProgressEmitter(cfg),
 	}
 
 	copyChan := make(chan copyBlocksState)
@@ -321,10 +328,10 @@ func TestCopierCleanup(t *testing.T) {
 // if it fails to find the block.
 func TestLastResortPulling(t *testing.T) {
 	fcfg := config.FolderConfiguration{ID: "default", Path: "testdata"}
-	cfg := config.Configuration{Folders: []config.FolderConfiguration{fcfg}}
+	cfg := config.Wrap("/tmp/test", config.Configuration{Folders: []config.FolderConfiguration{fcfg}})
 
 	db, _ := leveldb.Open(storage.NewMemStorage(), nil)
-	m := NewModel(config.Wrap("/tmp/test", cfg), "device", "syncthing", "dev", db)
+	m := NewModel(cfg, "device", "syncthing", "dev", db)
 	m.AddFolder(fcfg)
 
 	// Add a file to index (with the incorrect block representation, as content
@@ -351,9 +358,10 @@ func TestLastResortPulling(t *testing.T) {
 	}
 
 	p := Puller{
-		folder: "default",
-		dir:    "testdata",
-		model:  m,
+		folder:          "default",
+		dir:             "testdata",
+		model:           m,
+		progressEmitter: NewProgressEmitter(cfg),
 	}
 
 	copyChan := make(chan copyBlocksState)
