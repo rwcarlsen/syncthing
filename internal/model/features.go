@@ -28,10 +28,14 @@ import (
 type features uint64
 
 const (
+	FeatureTemporaryIndex = 1 << iota
+
 	FeatureAllFeatures features = (1 << iota) - 1
 )
 
-var featureStrings = map[features]string{}
+var featureStrings = map[features]string{
+	FeatureTemporaryIndex: "Temporary Index",
+}
 
 func (f features) Marshal() string {
 	buf := make([]byte, 8)

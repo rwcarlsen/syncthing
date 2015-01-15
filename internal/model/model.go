@@ -25,6 +25,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -163,6 +164,12 @@ func NewModel(cfg *config.Wrapper, deviceName, clientName, clientVersion string,
 	deadlockDetect(&m.fmut, time.Duration(timeout)*time.Second)
 	deadlockDetect(&m.smut, time.Duration(timeout)*time.Second)
 	deadlockDetect(&m.pmut, time.Duration(timeout)*time.Second)
+
+	tempIntv := time.Duration(cfg.Options().TemporaryIndexIntervalS) * time.Second
+	if tempIntv > 0 {
+		go m.sendTemporaryIndexes(tempIntv)
+	}
+
 	return m
 }
 
@@ -596,6 +603,18 @@ func (m *Model) ClusterConfig(deviceID protocol.DeviceID, cm protocol.ClusterCon
 
 	if conn, ok := m.rawConn[deviceID].(*tls.Conn); ok {
 		event["addr"] = conn.RemoteAddr().String()
+	}
+
+	if m.features.HasFeature(deviceID, FeatureTemporaryIndex) {
+		conn := m.protoConn[deviceID]
+
+		m.fmut.RLock()
+		folders := m.deviceFolders[deviceID]
+		m.fmut.RUnlock()
+
+		for _, folder := range folders {
+			conn.Index(folder, m.progressEmitter.GetTemporaryIndex(folder), protocol.FlagIndexTemporary, nil)
+		}
 	}
 
 	m.pmut.Unlock()
@@ -1446,6 +1465,54 @@ func (m *Model) BringToFront(folder, file string) {
 	runner, ok := m.folderRunners[folder]
 	if ok {
 		runner.BringToFront(file)
+	}
+}
+
+// A routine which periodically sends temporary index updates to device which
+// support the feature.
+func (m *Model) sendTemporaryIndexes(duration time.Duration) {
+	timer := time.NewTicker(duration)
+
+	// Storage for last seen temporary index state for a given folder.
+	// The layout is a bit of a hack, because the data structure that
+	// ProgressEmitter uses to hold sharedPullerState's is a map, which causes
+	// the FileInfo slice returned by GetTemporaryIndex to have random ordering,
+	// causing reflect.DeepEqual to always return false. We tackle the issue by
+	// flattening the file slice into a map with relevant information.
+	indexState := make(map[string]map[string][]protocol.BlockInfo)
+
+	for _ = range timer.C {
+		for folder, _ := range m.cfg.Folders() {
+			index := m.progressEmitter.GetTemporaryIndex(folder)
+			state := make(map[string][]protocol.BlockInfo)
+			for _, file := range index {
+				state[file.Name] = file.Blocks
+			}
+
+			if reflect.DeepEqual(indexState[folder], state) {
+				continue
+			}
+
+			indexState[folder] = state
+
+			m.fmut.RLock()
+			deviceIDs := m.folderDevices[folder]
+			m.fmut.RUnlock()
+
+			for _, deviceID := range deviceIDs {
+				if m.features.HasFeature(deviceID, FeatureTemporaryIndex) {
+					m.pmut.RLock()
+					conn := m.protoConn[deviceID]
+					m.pmut.RUnlock()
+
+					err := conn.Index(folder, index, protocol.FlagIndexTemporary, nil)
+					if debug {
+						l.Debugf("temporaryIndex for %s (len %d) to %s error: %s", folder, len(index), deviceID, err)
+					}
+				}
+			}
+		}
+
 	}
 }
 
