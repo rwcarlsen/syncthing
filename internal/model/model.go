@@ -1442,7 +1442,7 @@ func (m *Model) RemoteLocalVersion(folder string) uint64 {
 	return ver
 }
 
-func (m *Model) availability(folder, file string) []protocol.DeviceID {
+func (m *Model) availability(folder, file string, hash []byte) map[protocol.DeviceID]uint32 {
 	// Acquire this lock first, as the value returned from foldersFiles can
 	// get heavily modified on Close()
 	m.pmut.RLock()
@@ -1455,13 +1455,18 @@ func (m *Model) availability(folder, file string) []protocol.DeviceID {
 		return nil
 	}
 
-	availableDevices := []protocol.DeviceID{}
+	availableDevices := make(map[protocol.DeviceID]uint32)
 	for _, device := range fs.Availability(file) {
 		_, ok := m.protoConn[device]
 		if ok {
-			availableDevices = append(availableDevices, device)
+			availableDevices[device] = 0
 		}
 	}
+
+	for _, device := range m.tempIndex.Lookup(folder, file, hash) {
+		availableDevices[device] = protocol.FlagRequestTemporary
+	}
+
 	return availableDevices
 }
 
