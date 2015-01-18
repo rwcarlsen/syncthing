@@ -197,8 +197,11 @@ func BenchmarkIndexUpdate10000f00001(b *testing.B) {
 }
 
 type FakeConnection struct {
-	id          protocol.DeviceID
-	requestData []byte
+	id             protocol.DeviceID
+	requestData    []byte
+	indexes        []protocol.IndexMessage
+	clusterconfigs []protocol.ClusterConfigMessage
+	indexReturns   error
 }
 
 func (FakeConnection) Close() error {
@@ -217,8 +220,14 @@ func (f FakeConnection) Option(string) string {
 	return ""
 }
 
-func (FakeConnection) Index(string, []protocol.FileInfo, uint32, []protocol.Option) error {
-	return nil
+func (f *FakeConnection) Index(folder string, files []protocol.FileInfo, flags uint32, options []protocol.Option) error {
+	f.indexes = append(f.indexes, protocol.IndexMessage{
+		Folder:  folder,
+		Files:   files,
+		Flags:   flags,
+		Options: options,
+	})
+	return f.indexReturns
 }
 
 func (FakeConnection) IndexUpdate(string, []protocol.FileInfo, uint32, []protocol.Option) error {
@@ -229,7 +238,9 @@ func (f FakeConnection) Request(folder, name string, offset int64, size int, has
 	return f.requestData, nil
 }
 
-func (FakeConnection) ClusterConfig(protocol.ClusterConfigMessage) {}
+func (f *FakeConnection) ClusterConfig(cm protocol.ClusterConfigMessage) {
+	f.clusterconfigs = append(f.clusterconfigs, cm)
+}
 
 func (FakeConnection) Ping() bool {
 	return true
@@ -256,7 +267,7 @@ func BenchmarkRequest(b *testing.B) {
 		}
 	}
 
-	fc := FakeConnection{
+	fc := &FakeConnection{
 		id:          device1,
 		requestData: []byte("some data to return"),
 	}
