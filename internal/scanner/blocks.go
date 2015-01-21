@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/rwcarlsen/gobup/rollsum"
 	"github.com/syncthing/protocol"
 )
 
@@ -32,31 +33,43 @@ func Blocks(r io.Reader, blocksize int, sizehint int64) ([]protocol.BlockInfo, e
 	if sizehint > 0 {
 		blocks = make([]protocol.BlockInfo, 0, int(sizehint/int64(blocksize)))
 	}
-	var offset int64
+
+	var offset, n int64
 	hf := sha256.New()
+	roller := rollsum.NewCustom(rollsum.DefaultWindow, blocksize)
+	tr := io.TeeReader(r, hf)
+
 	for {
-		lr := &io.LimitedReader{R: r, N: int64(blocksize)}
-		n, err := io.Copy(hf, lr)
-		if err != nil {
+		_, err := io.CopyN(roller, tr, 1)
+		if err == io.EOF {
+			break
+		} else if err != nil {
 			return nil, err
 		}
+		n++
 
-		if n == 0 {
-			break
+		if roller.OnSplit() {
+			b := protocol.BlockInfo{
+				Size:   int32(n),
+				Offset: offset,
+				Hash:   hf.Sum(nil),
+			}
+			blocks = append(blocks, b)
+			offset += n
+			n = 0
+			hf.Reset()
 		}
+	}
 
+	if n > 0 {
+		// leftover bytes for last block
 		b := protocol.BlockInfo{
 			Size:   int32(n),
 			Offset: offset,
 			Hash:   hf.Sum(nil),
 		}
 		blocks = append(blocks, b)
-		offset += int64(n)
-
-		hf.Reset()
-	}
-
-	if len(blocks) == 0 {
+	} else if len(blocks) == 0 {
 		// Empty file
 		blocks = append(blocks, protocol.BlockInfo{
 			Offset: 0,
