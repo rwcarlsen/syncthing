@@ -88,9 +88,7 @@ func (rs *Rollsum) Block() protocol.BlockInfo { return rs.block }
 func (rs *Rollsum) Err() error { return rs.err }
 
 func (rs *Rollsum) onSplit() bool {
-	return (rs.s2 & (rs.blocksize<<1 - 1)) == (rs.blocksize<<1 - 1)
-	//fmt.Println(rs.sum())
-	//return rs.sum() < rs.target
+	return (rs.s2 & (rs.blocksize - 1)) == (rs.blocksize - 1)
 }
 func (rs *Rollsum) sum() uint32 { return (rs.s1 << 16) | (rs.s2 & 0xffff) }
 
