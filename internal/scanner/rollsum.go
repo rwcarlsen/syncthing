@@ -5,6 +5,7 @@ package scanner
 import (
 	"hash"
 	"io"
+	"log"
 
 	"github.com/syncthing/protocol"
 )
@@ -39,6 +40,7 @@ func newRollsumWindow(r io.Reader, window, blocksize int, h hash.Hash) *Rollsum 
 
 // NewRollsum ...  blocksize must be a power of 2 up to 2^16.
 func NewRollsum(r io.Reader, blocksize int, h hash.Hash) *Rollsum {
+	log.Printf("*** created rollsum with blocksize = ", blocksize)
 	return newRollsumWindow(r, window, blocksize, h)
 }
 

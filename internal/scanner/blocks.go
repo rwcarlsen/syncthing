@@ -21,6 +21,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
+	"log"
 
 	"github.com/syncthing/protocol"
 )
@@ -41,6 +42,11 @@ func Blocks(r io.Reader, blocksize int, sizehint int64) ([]protocol.BlockInfo, e
 	}
 	if err := roller.Err(); err != nil {
 		return nil, err
+	}
+
+	log.Printf("split file into %v blocks:", len(blocks))
+	for i, b := range blocks {
+		log.Printf("    - block %v: size=%v, offset=%v", i, b.Size, b.Offset)
 	}
 
 	if len(blocks) == 0 {
