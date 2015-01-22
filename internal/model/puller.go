@@ -683,7 +683,7 @@ func (p *Puller) shortcutSymlink(file protocol.FileInfo) {
 // copierRoutine reads copierStates until the in channel closes and performs
 // the relevant copies when possible, or passes it to the puller routine.
 func (p *Puller) copierRoutine(in <-chan copyBlocksState, pullChan chan<- pullBlockState, out chan<- *sharedPullerState) {
-	buf := make([]byte, protocol.BlockSize)
+	buf := make([]byte, 0, protocol.BlockSize*3)
 
 	for state := range in {
 		if p.progressEmitter != nil {
@@ -719,7 +719,11 @@ func (p *Puller) copierRoutine(in <-chan copyBlocksState, pullChan chan<- pullBl
 		p.model.fmut.RUnlock()
 
 		for _, block := range state.blocks {
-			buf = buf[:int(block.Size)]
+			if int(block.Size) <= cap(buf) {
+				buf = buf[:int(block.Size)]
+			} else {
+				buf = make([]byte, int(block.Size))
+			}
 			found := p.model.finder.Iterate(block.Hash, func(folder, file string, index int32) bool {
 				path := filepath.Join(folderRoots[folder], file)
 
