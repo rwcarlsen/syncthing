@@ -14,31 +14,34 @@ const charOffset = 31
 const window = 64
 
 type Rollsum struct {
-	s1, s2  uint32
-	window  []byte
-	winsize int
-	i       int
-	target  uint32
-	hasher  hash.Hash
-	r       io.Reader
-	offset  int64
-	err     error
-	block   protocol.BlockInfo
+	s1, s2   uint32
+	window   []byte
+	winsize  int
+	i        int
+	target   uint32
+	minblock int32
+	hasher   hash.Hash
+	r        io.Reader
+	offset   int64
+	err      error
+	block    protocol.BlockInfo
 }
 
 func newRollsumWindow(r io.Reader, window, blocksize int, h hash.Hash) *Rollsum {
 	return &Rollsum{
-		s1:      uint32(window) * charOffset,
-		s2:      uint32(window) * (uint32(window) - 1) * charOffset,
-		window:  make([]byte, window),
-		winsize: window,
-		target:  math.MaxUint32 / uint32(blocksize),
-		r:       io.TeeReader(r, h),
-		hasher:  h,
+		s1:       uint32(window) * charOffset,
+		s2:       uint32(window) * (uint32(window) - 1) * charOffset,
+		window:   make([]byte, window),
+		winsize:  window,
+		target:   math.MaxUint32 / uint32(blocksize),
+		minblock: int32(blocksize) / 8,
+		r:        io.TeeReader(r, h),
+		hasher:   h,
 	}
 }
 
-// NewRollsum ...  blocksize must be a power of 2 up to 2^16.
+// NewRollsum ...  blocksize should probably be less than 2^20 to make up for
+// non-uniformity in the checksum algo.
 func NewRollsum(r io.Reader, blocksize int, h hash.Hash) *Rollsum {
 	return newRollsumWindow(r, window, blocksize, h)
 }
@@ -60,7 +63,7 @@ func (rs *Rollsum) Next() bool {
 		size++
 		rs.writeByte(data[0])
 
-		if rs.onSplit() {
+		if rs.onSplit() && size > rs.minblock {
 			rs.block = protocol.BlockInfo{
 				Offset: rs.offset,
 				Size:   size,
