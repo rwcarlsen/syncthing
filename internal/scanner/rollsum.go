@@ -6,6 +6,7 @@ import (
 	"hash"
 	"io"
 	"log"
+	"math"
 
 	"github.com/syncthing/protocol"
 )
@@ -14,33 +15,33 @@ const charOffset = 31
 const window = 64
 
 type Rollsum struct {
-	s1, s2    uint32
-	window    []byte
-	winsize   int
-	i         int
-	blocksize uint32
-	hasher    hash.Hash
-	r         io.Reader
-	offset    int64
-	err       error
-	block     protocol.BlockInfo
+	s1, s2  uint32
+	window  []byte
+	winsize int
+	i       int
+	target  uint32
+	hasher  hash.Hash
+	r       io.Reader
+	offset  int64
+	err     error
+	block   protocol.BlockInfo
 }
 
 func newRollsumWindow(r io.Reader, window, blocksize int, h hash.Hash) *Rollsum {
 	return &Rollsum{
-		s1:        uint32(window) * charOffset,
-		s2:        uint32(window) * (uint32(window) - 1) * charOffset,
-		window:    make([]byte, window),
-		winsize:   window,
-		blocksize: uint32(blocksize),
-		r:         io.TeeReader(r, h),
-		hasher:    h,
+		s1:      uint32(window) * charOffset,
+		s2:      uint32(window) * (uint32(window) - 1) * charOffset,
+		window:  make([]byte, window),
+		winsize: window,
+		target:  math.MaxUint32 / uint32(blocksize),
+		r:       io.TeeReader(r, h),
+		hasher:  h,
 	}
 }
 
 // NewRollsum ...  blocksize must be a power of 2 up to 2^16.
 func NewRollsum(r io.Reader, blocksize int, h hash.Hash) *Rollsum {
-	log.Printf("*** created rollsum with blocksize = ", blocksize)
+	log.Printf("*** created rollsum with blocksize = %v", blocksize)
 	return newRollsumWindow(r, window, blocksize, h)
 }
 
@@ -90,14 +91,16 @@ func (rs *Rollsum) Block() protocol.BlockInfo { return rs.block }
 func (rs *Rollsum) Err() error { return rs.err }
 
 func (rs *Rollsum) onSplit() bool {
-	return (rs.s2 & (rs.blocksize - 1)) == (rs.blocksize - 1)
+	//log.Print("**** sum: ", rs.sum())
+	return rs.sum() < rs.target
+	//return (rs.s2 & (uint32(rs.blocksize) - 1)) == (uint32(rs.blocksize) - 1)
 }
-func (rs *Rollsum) sum() uint32 { return (rs.s1 << 16) | (rs.s2 & 0xffff) }
+func (rs *Rollsum) sum() uint32 { return (rs.s2 << 16) + rs.s1 }
 
 func (rs *Rollsum) writeByte(c byte) {
 	drop := rs.window[rs.i]
-	rs.s1 += uint32(c) - uint32(drop)
-	rs.s2 += rs.s1 - uint32(rs.winsize)*(uint32(drop)+charOffset)
+	rs.s1 = (rs.s1 + uint32(c) - uint32(drop)) % 1 << 16
+	rs.s2 = (rs.s2 + rs.s1 - uint32(rs.winsize)*(uint32(drop)+charOffset)) % (1 << 16)
 
 	rs.window[rs.i] = c
 	rs.i = (rs.i + 1) % rs.winsize

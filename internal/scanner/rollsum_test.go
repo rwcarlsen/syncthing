@@ -50,7 +50,7 @@ func TestRollsum_algo(t *testing.T) {
 // this is effectively a regression test to make sure we don't break/change
 // the split points.
 func TestRollsum_SplitPoints(t *testing.T) {
-	blocksize := 1 << 16 // 65k
+	blocksize := 1024 * 64 // 65k
 	data := make([]byte, blocksize*10)
 	rand.Seed(1)
 	for i := range data {
