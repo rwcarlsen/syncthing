@@ -58,14 +58,20 @@ func TestRollsum_SplitPoints(t *testing.T) {
 	}
 
 	expectSize := []int32{
-		2584,
-		95404,
-		12777,
-		37942,
-		193105,
-		14298,
-		284638,
-		14612,
+		38718,
+		185906,
+		61635,
+		37853,
+		9415,
+		71047,
+		43394,
+		52601,
+		74123,
+		5543,
+		23490,
+		4239,
+		8368,
+		39028,
 	}
 
 	roller := NewRollsum(bytes.NewBuffer(data), blocksize, sha256.New())
@@ -83,7 +89,7 @@ func TestRollsum_SplitPoints(t *testing.T) {
 	for i, b := range blocks {
 		t.Logf("block %v: size=%v, offset=%v, sha256=%x", i, b.Size, b.Offset, b.Hash)
 		if b.Size != expectSize[i] {
-			t.Errorf("    wrong length: expected %v, got %v", i, expectSize[i], b.Size)
+			t.Errorf("    wrong length: expected %v, got %v", expectSize[i], b.Size)
 		}
 	}
 }

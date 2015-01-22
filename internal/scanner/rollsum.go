@@ -5,7 +5,6 @@ package scanner
 import (
 	"hash"
 	"io"
-	"log"
 	"math"
 
 	"github.com/syncthing/protocol"
@@ -41,7 +40,6 @@ func newRollsumWindow(r io.Reader, window, blocksize int, h hash.Hash) *Rollsum 
 
 // NewRollsum ...  blocksize must be a power of 2 up to 2^16.
 func NewRollsum(r io.Reader, blocksize int, h hash.Hash) *Rollsum {
-	log.Printf("*** created rollsum with blocksize = %v", blocksize)
 	return newRollsumWindow(r, window, blocksize, h)
 }
 
@@ -91,16 +89,14 @@ func (rs *Rollsum) Block() protocol.BlockInfo { return rs.block }
 func (rs *Rollsum) Err() error { return rs.err }
 
 func (rs *Rollsum) onSplit() bool {
-	//log.Print("**** sum: ", rs.sum())
 	return rs.sum() < rs.target
-	//return (rs.s2 & (uint32(rs.blocksize) - 1)) == (uint32(rs.blocksize) - 1)
 }
 func (rs *Rollsum) sum() uint32 { return (rs.s2 << 16) + rs.s1 }
 
 func (rs *Rollsum) writeByte(c byte) {
 	drop := rs.window[rs.i]
-	rs.s1 = (rs.s1 + uint32(c) - uint32(drop)) % 1 << 16
-	rs.s2 = (rs.s2 + rs.s1 - uint32(rs.winsize)*(uint32(drop)+charOffset)) % (1 << 16)
+	rs.s1 = (rs.s1 + uint32(c) - uint32(drop)) % math.MaxUint32
+	rs.s2 = (rs.s2 + rs.s1 - uint32(rs.winsize)*(uint32(drop)+charOffset)) % math.MaxUint32
 
 	rs.window[rs.i] = c
 	rs.i = (rs.i + 1) % rs.winsize
